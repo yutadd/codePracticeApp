@@ -1,0 +1,37 @@
+{
+  "name": "code-practice-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "stop": "node scripts/stop.mjs",
+    "reset-progress": "node --disable-warning=ExperimentalWarning scripts/reset-progress.mjs",
+    "clear-all": "node --disable-warning=ExperimentalWarning node_modules/vite-node/vite-node.mjs scripts/clear-all.ts",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:static": "tsc -b && vite build --mode static",
+    "deploy:aws": "npm run build:static && node scripts/deploy-aws.mjs",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tone": "^15.1.22"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.6",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-node": "^3.2.4",
+    "vitest": "^3.1.2"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
