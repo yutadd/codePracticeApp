@@ -9,9 +9,10 @@ interface HomeProps {
   onSelect: (ref: UnitRef) => void;
   onSettings: () => void;
   onStats: () => void;
+  onJam: () => void;
 }
 
-export function Home({ onSelect, onSettings, onStats }: HomeProps) {
+export function Home({ onSelect, onSettings, onStats, onJam }: HomeProps) {
   const p = useProgress();
   useMidiState();
   const fullscreen = useFullscreen();
@@ -36,6 +37,10 @@ export function Home({ onSelect, onSettings, onStats }: HomeProps) {
       <p className="muted">
         MIDI：{midi.supported ? (midi.hasInput() ? `接続中（${midi.currentDeviceName()}）` : '未接続') : '非対応（パズルのみ）'}
       </p>
+      <button className="mode-btn jam-entry" onClick={onJam}>
+        <span>🎸 フリー演奏</span>
+        <span className="small muted">YouTube の曲に合わせて、登録したコードをタイルで鳴らす（MIDI不要）</span>
+      </button>
       <div className="themes">
         {THEMES.map((theme) => {
           const themeOpen = theme.levels.some((level) => isUnlocked(p, { themeId: theme.id, keyIndex: 0, level }));

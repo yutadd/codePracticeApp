@@ -1,5 +1,7 @@
 // 進捗・統計・設定の保存（localStorage。サーバーがあれば SQLite にも：server.ts）と、デバイス間マージ
 import { useSyncExternalStore } from 'react';
+import type { JamChordSpec } from '../music/jam';
+import type { KeyDef } from '../music/theory';
 
 export type ClickMode = 'all' | 'downbeat' | 'backbeat';
 export type NoteNameMode = 'show' | 'after' | 'hide';
@@ -54,6 +56,39 @@ export interface ChordStat {
   timedCount: number;
 }
 
+/** ⑤フリー演奏の音の長さ */
+export type JamSustain = 'hold' | 'fixed' | 'untilNext';
+
+export interface JamSound {
+  sustain: JamSustain;
+  /** sustain が 'fixed' のときの長さ（秒） */
+  length: number;
+  /** ストローク（音をずらして鳴らす間隔、秒） */
+  strum: number;
+  bass: boolean;
+  /** コードの音量 0〜1 */
+  volume: number;
+}
+
+export const DEFAULT_JAM_SOUND: JamSound = { sustain: 'fixed', length: 1.5, strum: 0, bass: true, volume: 0.8 };
+
+/** ⑤フリー演奏に登録した曲 */
+export interface JamSong {
+  id: string;
+  title: string;
+  /** YouTube の URL（空なら動画なし） */
+  youtube: string;
+  key: KeyDef;
+  chords: JamChordSpec[];
+  sound: JamSound;
+  /** YouTube の音量 0〜100 */
+  videoVolume: number;
+  createdAt: number;
+  updatedAt: number;
+  /** 削除済み（端末間マージで復活しないよう残す） */
+  deleted?: boolean;
+}
+
 export interface Progress {
   version: 1;
   units: Record<string, UnitProgress>;
@@ -63,6 +98,8 @@ export interface Progress {
   settingsUpdatedAt: number;
   /** 'MIDI機器名@端末ID' → 補正値(ms) */
   latency: Record<string, number>;
+  /** ⑤フリー演奏の曲（ID → 曲）。進捗のリセットでは消さない */
+  songs: Record<string, JamSong>;
   updatedAt: number;
 }
 
@@ -81,6 +118,7 @@ function emptyProgress(): Progress {
     settings: { ...DEFAULT_SETTINGS },
     settingsUpdatedAt: 0,
     latency: {},
+    songs: {},
     updatedAt: 0,
   };
 }
@@ -92,6 +130,7 @@ function normalize(p: Partial<Progress> | null | undefined): Progress {
     ...base,
     ...p,
     settings: { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) },
+    songs: p.songs ?? {},
   } as Progress;
 }
 
@@ -271,8 +310,36 @@ export function mergeProgress(a: Progress, b: Progress): Progress {
   out.settings = { ...newerSettings.settings, midiInputId: a.settings.midiInputId };
   out.settingsUpdatedAt = newerSettings.settingsUpdatedAt;
   out.latency = { ...b.latency, ...a.latency };
+  for (const id of new Set([...Object.keys(a.songs), ...Object.keys(b.songs)])) {
+    const x = a.songs[id];
+    const y = b.songs[id];
+    // 新しく保存した方を採用（削除も1つの更新として扱う）
+    out.songs[id] = structuredClone(!y || (x && x.updatedAt >= y.updatedAt) ? x : y);
+  }
   out.updatedAt = Math.max(a.updatedAt, b.updatedAt);
   return out;
 }
 
 export { normalize as normalizeProgress };
+
+// ---- ⑤フリー演奏の曲 ----
+
+export function saveSong(song: JamSong) {
+  updateProgress((p) => {
+    p.songs[song.id] = { ...structuredClone(song), updatedAt: Date.now() };
+  });
+}
+
+export function deleteSong(id: string) {
+  updateProgress((p) => {
+    const s = p.songs[id];
+    if (s) p.songs[id] = { ...s, deleted: true, updatedAt: Date.now() };
+  });
+}
+
+/** 一覧用：削除済みを除き、最近使った（保存した）順 */
+export function listSongs(p: Progress): JamSong[] {
+  return Object.values(p.songs)
+    .filter((s) => !s.deleted)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}

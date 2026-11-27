@@ -4,6 +4,7 @@ import * as Tone from 'tone';
 const SAMPLE_BASE = 'https://tonejs.github.io/audio/salamander/';
 const SAMPLE_NOTES = ['A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6'];
 
+const PIANO_DB = -4;
 const toDb = (v: number) => (v <= 0.001 ? -Infinity : 20 * Math.log10(v));
 
 class AudioEngine {
@@ -22,6 +23,7 @@ class AudioEngine {
   private bassSynth!: Tone.MonoSynth;
 
   private metronomeVol!: Tone.Volume;
+  private pianoVol!: Tone.Volume;
   private accompVol!: Tone.Volume;
 
   /** ユーザー操作の中で呼ぶ（ブラウザの自動再生制限） */
@@ -42,7 +44,7 @@ class AudioEngine {
 
     this.metronomeVol = new Tone.Volume(0).toDestination();
     this.accompVol = new Tone.Volume(0).toDestination();
-    const pianoVol = new Tone.Volume(-4).toDestination();
+    const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).toDestination());
 
     this.pianoFallback = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'triangle' },
@@ -126,6 +128,11 @@ class AudioEngine {
     if (this.accompVol) this.accompVol.volume.value = toDb(v);
   }
 
+  /** ピアノ（コード・MIDIモニター）の音量。1 が標準 */
+  setPianoVolume(v: number) {
+    if (this.pianoVol) this.pianoVol.volume.value = PIANO_DB + toDb(v);
+  }
+
   private piano() {
     return this.samplerLoaded && this.pianoSampler ? this.pianoSampler : this.pianoFallback;
   }
@@ -142,12 +149,12 @@ class AudioEngine {
   }
 
   /** 押している間だけ鳴らす（MIDIモニター用） */
-  noteOn(midi: number, velocity = 0.8) {
-    this.piano()?.triggerAttack(Tone.Frequency(midi, 'midi').toNote(), undefined, velocity);
+  noteOn(midi: number, velocity = 0.8, time?: number) {
+    this.piano()?.triggerAttack(Tone.Frequency(midi, 'midi').toNote(), time, velocity);
   }
 
-  noteOff(midi: number) {
-    this.piano()?.triggerRelease(Tone.Frequency(midi, 'midi').toNote());
+  noteOff(midi: number, time?: number) {
+    this.piano()?.triggerRelease(Tone.Frequency(midi, 'midi').toNote(), time);
   }
 
   click(time: number, accent: boolean) {

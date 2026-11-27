@@ -39,7 +39,9 @@ Windows ではルートの `start.bat` `stop.bat` `reset-progress.bat` `clear-al
 | `server/progressDb.mjs` | SQLite（`data/progress.db`）の読み書きと `/api/progress`（Vite プラグイン） |
 | `scripts/` | 起動・終了・リセット・全クリのスクリプト |
 | `src/music/scale.ts` | ④スケール練習のお題と判定 |
-| `src/screens/` | 各画面（ホーム、①フラッシュ、③パズル、④スケール練習、遅延補正、設定、記録） |
+| `src/music/jam.ts` | ⑤フリー演奏のコード（ディグリー＋種類）、ヴォイシング、YouTube URL の解析 |
+| `src/components/YouTubePlayer.tsx` | YouTube の埋め込み（IFrame Player API） |
+| `src/screens/` | 各画面（ホーム、①フラッシュ、③パズル、④スケール練習、⑤フリー演奏、遅延補正、設定、記録） |
 
 ## 進捗の保存
 
