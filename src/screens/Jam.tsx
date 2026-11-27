@@ -12,16 +12,21 @@ import {
   JamChord,
   JamChordSpec,
   JamQuality,
-  jamDegreeLabel,
+  estimateKey,
+  parseChordList,
+  parseChordName,
   resolveJamChord,
+  respell,
+  ROOT_NAMES,
   sameSpec,
+  specFromName,
   tonicForMode,
   tonicsFor,
   voiceChord,
   youtubeId,
   youtubeStart,
 } from '../music/jam';
-import { KeyDef, keyName, KeyMode, mod12, ROMAN } from '../music/theory';
+import { KeyDef, keyName, KeyMode, mod12 } from '../music/theory';
 import {
   DEFAULT_JAM_SOUND,
   deleteSong,
@@ -57,7 +62,7 @@ function newSong(): JamSong {
     title: '',
     youtube: '',
     key: { tonic: 'C', mode: 'major' },
-    chords: diatonicSpecs('major', false).slice(0, 6),
+    chords: [],
     sound: { ...DEFAULT_JAM_SOUND },
     videoVolume: 70,
     createdAt: now,
@@ -157,7 +162,12 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
   const stored = songId ? p.songs[songId] : undefined;
   const [song, setSong] = useState<JamSong>(() => (stored ? structuredClone(stored) : newSong()));
   const [palette, setPalette] = useState<'triad' | 'seventh'>('triad');
-  const [custom, setCustom] = useState<JamChordSpec>({ deg: 7, acc: -1, quality: 'maj' });
+  const [customRoot, setCustomRoot] = useState('C');
+  const [customQ, setCustomQ] = useState<JamQuality>('maj');
+  const [sheet, setSheet] = useState('');
+  const [sheetMsg, setSheetMsg] = useState<{ ok: string; ng: string; note?: string } | null>(null);
+  // 新しい曲で、まだキーを自分で選んでいなければ、コード譜からキーを決める
+  const [keyChosen, setKeyChosen] = useState(!!stored);
   const preview = useChordVoice();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -167,6 +177,49 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
     set({ chords: [...song.chords, spec] });
     preview.play(resolveJamChord(song.key, spec), { ...song.sound, sustain: 'fixed' });
   };
+  /** 編集画面でキーを変えても、登録したコード（鳴る音）はそのまま。ディグリーだけ付け直す */
+  const changeKey = (key: KeyDef) => {
+    setKeyChosen(true);
+    setSong((s) => ({ ...s, key, chords: s.chords.map((c) => respell(s.key, key, c)) }));
+  };
+  const addCustom = () => {
+    const c = parseChordName(customRoot)!;
+    add(specFromName(song.key, c.letter, c.pc, customQ));
+  };
+  const addSheet = () => {
+    const { chords: parsed, unknown } = parseChordList(sheet);
+    if (parsed.length === 0) {
+      setSheetMsg({ ok: '', ng: unknown.length ? `読めませんでした：${unknown.join(' ')}` : 'コード名を入力してください。' });
+      return;
+    }
+    let key = song.key;
+    let keyNote = '';
+    if (!keyChosen && song.chords.length === 0) {
+      key = estimateKey(parsed) ?? key;
+      keyNote = `キーは ${keyName(key)} と推定しました。`;
+    }
+    const chords = song.chords.map((c) => respell(song.key, key, c));
+    let added = 0;
+    for (const c of parsed) {
+      const spec = specFromName(key, c.letter, c.pc, c.quality);
+      // 同じコードはタイルを1つにする
+      if (chords.some((x) => sameSpec(x, spec))) continue;
+      chords.push(spec);
+      added++;
+    }
+    setSong((s) => ({ ...s, key, chords }));
+    const approx = parsed.filter((c) => c.approx || c.slash);
+    setSheet('');
+    setSheetMsg({
+      ok: `${added}個のコードを追加しました${added < parsed.length ? '（重複は1つにまとめました）' : ''}。${keyNote}`,
+      ng: unknown.length ? `読めなかった語：${unknown.join(' ')}` : '',
+      note: approx.length ? 'テンションや分数コード（/の右側）は省いて、近いコードで鳴らします。' : '',
+    });
+  };
+  const guess = useMemo(
+    () => estimateKey(song.chords.map((c) => resolveJamChord(song.key, c)).map((c) => ({ pc: c.rootPc, quality: c.spec.quality }))),
+    [song.key, song.chords],
+  );
   const move = (i: number, d: number) => {
     const j = i + d;
     if (j < 0 || j >= song.chords.length) return;
@@ -228,15 +281,26 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
             )}
           </label>
           <label>
-            キー
-            <KeyPicker value={song.key} onChange={(key) => set({ key })} />
+            キー（わからなければそのままで大丈夫）
+            <KeyPicker value={song.key} onChange={changeKey} />
+            {guess && keyName(guess) !== keyName(song.key) && song.chords.length >= 3 && (
+              <span className="small">
+                コードから推定すると <b>{keyName(guess)}</b>{' '}
+                <button className="link" onClick={() => changeKey(guess)}>
+                  このキーにする
+                </button>
+              </span>
+            )}
           </label>
         </div>
+        <p className="small muted">
+          キーはディグリー（コード名の下の小さい表示）を決めるためだけに使います。キーを変えても、登録したコードはそのままです。
+        </p>
       </section>
 
       <section>
         <h3>使うコード（{song.chords.length}）</h3>
-        <p className="small muted">タイルの順に並びます。キーを変えると、同じディグリーのまま移調されます。</p>
+        <p className="small muted">タイルの順に並びます。‹ › で並べ替え、× で外せます。</p>
         <div className="tile-edit-list">
           {song.chords.map((c, i) => {
             const chord = resolveJamChord(song.key, c);
@@ -261,7 +325,53 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
           {song.chords.length === 0 && <span className="muted small">下から追加してください。</span>}
         </div>
 
-        <h3>追加する</h3>
+        <h3>コード譜から入力</h3>
+        <p className="small muted">
+          歌詞サイトなどのコード譜を、そのまま貼り付けたり打ち込んだりできます（例：<code>Am F G C</code>、<code>| C | G/B | Am7 |</code>）。
+        </p>
+        <div className="sheet-input">
+          <textarea
+            id="jam-sheet"
+            rows={2}
+            value={sheet}
+            placeholder="例：F G Em Am"
+            onChange={(e) => setSheet(e.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <button className="primary" onClick={addSheet} disabled={!sheet.trim()}>
+            追加
+          </button>
+        </div>
+        {sheetMsg && (
+          <p className="small">
+            {sheetMsg.ok && <span className="ok-text">{sheetMsg.ok}</span>} {sheetMsg.ng && <span className="ng-text">{sheetMsg.ng}</span>}{' '}
+            {sheetMsg.note && <span className="muted">{sheetMsg.note}</span>}
+          </p>
+        )}
+
+        <h3>コード名を選んで追加</h3>
+        <div className="row custom-chord">
+          <select id="jam-root" value={customRoot} onChange={(e) => setCustomRoot(e.target.value)} aria-label="根音">
+            {ROOT_NAMES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <select id="jam-quality" value={customQ} onChange={(e) => setCustomQ(e.target.value as JamQuality)} aria-label="コードの種類">
+            {JAM_QUALITY_ORDER.map((q) => (
+              <option key={q} value={q}>
+                {customRoot}
+                {JAM_QUALITIES[q].suffix}（{JAM_QUALITIES[q].label}）
+              </option>
+            ))}
+          </select>
+          <button onClick={addCustom}>{customRoot + JAM_QUALITIES[customQ].suffix} を追加</button>
+        </div>
+
+        <h3>このキーでよく使うコード</h3>
         <div className="row">
           <button className={palette === 'triad' ? 'primary' : ''} onClick={() => setPalette('triad')}>
             3和音
@@ -269,7 +379,7 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
           <button className={palette === 'seventh' ? 'primary' : ''} onClick={() => setPalette('seventh')}>
             4和音
           </button>
-          <span className="small muted">キー {keyName(song.key)} のダイアトニックコード（タップで追加）</span>
+          <span className="small muted">キー {keyName(song.key)} の基本のコード（タップで追加）</span>
         </div>
         <div className="palette">
           {diatonicSpecs(song.key.mode, palette === 'seventh').map((spec) => {
@@ -282,40 +392,6 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
               </button>
             );
           })}
-        </div>
-
-        <div className="row custom-chord">
-          <span className="small">そのほかのコード：</span>
-          <select
-            value={custom.acc}
-            onChange={(e) => setCustom({ ...custom, acc: Number(e.target.value) as -1 | 0 | 1 })}
-            aria-label="変化記号"
-          >
-            <option value={-1}>♭</option>
-            <option value={0}>（なし）</option>
-            <option value={1}>♯</option>
-          </select>
-          <select value={custom.deg} onChange={(e) => setCustom({ ...custom, deg: Number(e.target.value) })} aria-label="ディグリー">
-            {ROMAN.map((r, i) => (
-              <option key={r} value={i + 1}>
-                {r}
-              </option>
-            ))}
-          </select>
-          <select
-            value={custom.quality}
-            onChange={(e) => setCustom({ ...custom, quality: e.target.value as JamQuality })}
-            aria-label="コードの種類"
-          >
-            {JAM_QUALITY_ORDER.map((q) => (
-              <option key={q} value={q}>
-                {JAM_QUALITIES[q].label}
-              </option>
-            ))}
-          </select>
-          <button onClick={() => add(custom)}>
-            {resolveJamChord(song.key, custom).name}（{jamDegreeLabel(custom)}）を追加
-          </button>
         </div>
 
         <div className="row custom-chord">
@@ -637,6 +713,7 @@ export function JamPlay({ songId, onBack, onEdit }: PlayProps) {
         </button>
         <h2 className="jam-title">{song.title || '（無題）'}</h2>
         <span className="spacer" />
+        <span className="small muted transpose-label">移調</span>
         <KeyPicker
           value={song.key}
           onChange={(key) => {

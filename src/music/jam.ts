@@ -7,6 +7,7 @@ export type JamQuality =
   | 'dim'
   | 'aug'
   | 'sus4'
+  | 'sus2'
   | 'maj7'
   | 'min7'
   | 'dom7'
@@ -29,6 +30,7 @@ export const JAM_QUALITIES: Record<JamQuality, QualityDef> = {
   dim: { suffix: 'dim', tones: [[0, 0], [3, 2], [6, 4]], label: 'dim' },
   aug: { suffix: 'aug', tones: [[0, 0], [4, 2], [8, 4]], label: 'aug' },
   sus4: { suffix: 'sus4', tones: [[0, 0], [5, 3], [7, 4]], label: 'sus4' },
+  sus2: { suffix: 'sus2', tones: [[0, 0], [2, 1], [7, 4]], label: 'sus2' },
   maj7: { suffix: 'M7', tones: [[0, 0], [4, 2], [7, 4], [11, 6]], label: 'M7' },
   min7: { suffix: 'm7', tones: [[0, 0], [3, 2], [7, 4], [10, 6]], label: 'm7' },
   dom7: { suffix: '7', tones: [[0, 0], [4, 2], [7, 4], [10, 6]], label: '7' },
@@ -246,4 +248,175 @@ export function youtubeStart(input: string): number {
   const m = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
   if (!m) return 0;
   return Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+}
+
+// ---- コード名から選ぶ（ディグリーを知らなくても登録できるように） ----
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
+
+/** コード名の根音の選択肢 */
+export const ROOT_NAMES = ['C', 'C♯', 'D♭', 'D', 'D♯', 'E♭', 'E', 'F', 'F♯', 'G♭', 'G', 'G♯', 'A♭', 'A', 'A♯', 'B♭', 'B'];
+
+export interface ParsedChord {
+  /** 文字（C=0 … B=6） */
+  letter: number;
+  pc: number;
+  quality: JamQuality;
+  /** 分数コードのベース（例：C/G の G）。今は鳴らさないので表示用 */
+  slash?: string;
+  /** テンションなどを省いて近いコードにした（例：C7(9) → C7） */
+  approx?: boolean;
+}
+
+// 長いものから順に照合する
+const SUFFIXES: [string, JamQuality][] = [
+  ['m7(♭5)', 'm7b5'],
+  ['m7(b5)', 'm7b5'],
+  ['m7-5', 'm7b5'],
+  ['m7♭5', 'm7b5'],
+  ['m7b5', 'm7b5'],
+  ['7sus4', '7sus4'],
+  ['maj7', 'maj7'],
+  ['Maj7', 'maj7'],
+  ['dim7', 'dim7'],
+  ['add9', 'add9'],
+  ['sus4', 'sus4'],
+  ['sus2', 'sus2'],
+  ['sus', 'sus4'],
+  ['min7', 'min7'],
+  ['M7', 'maj7'],
+  ['△7', 'maj7'],
+  ['m7', 'min7'],
+  ['-7', 'min7'],
+  ['ø7', 'm7b5'],
+  ['ø', 'm7b5'],
+  ['°7', 'dim7'],
+  ['dim', 'dim'],
+  ['°', 'dim'],
+  ['aug', 'aug'],
+  ['+', 'aug'],
+  ['min', 'min'],
+  ['m', 'min'],
+  ['-', 'min'],
+  ['7', 'dom7'],
+  ['6', 'six'],
+  ['', 'maj'],
+];
+
+/** 'F♯m7' 'Bb' 'C/G' などを読む。読めなければ null */
+export function parseChordName(text: string): ParsedChord | null {
+  let s = text.trim().replace(/＃/g, '#').replace(/♭/g, 'b').replace(/♯/g, '#');
+  if (!s) return null;
+  let slash: string | undefined;
+  const sl = s.match(/^(.+?)\/([A-Ga-g][#b]?)$/);
+  if (sl) {
+    s = sl[1];
+    slash = sl[2][0].toUpperCase() + sl[2].slice(1).replace('#', '♯').replace('b', '♭');
+  }
+  const m = s.match(/^([A-Ga-g])([#b]?)(.*)$/);
+  if (!m) return null;
+  const letter = LETTERS.indexOf(m[1].toUpperCase());
+  const shift = m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0;
+  const rest = m[3].replace(/\s/g, '').replace(/#/g, '♯');
+  // (♭5) 表記をそろえる
+  const restNorm = rest.replace('(b5)', '(♭5)').replace('b5', '♭5');
+  let hit = SUFFIXES.find(([suf]) => suf === rest || suf === restNorm);
+  let approx = false;
+  if (!hit) {
+    // テンション付き（C7(9)、Cm9、CM9、C13、Cadd2 など）は、テンションを省いた近いコードにする
+    const base = restNorm.replace(/\(.*\)$/, '');
+    const approxMap: [RegExp, JamQuality][] = [
+      [/^(m|min|-)(9|11|13)$/, 'min7'],
+      [/^(M|maj|△)(9|11|13)$/, 'maj7'],
+      [/^(9|11|13)$/, 'dom7'],
+      [/^(add2|2)$/, 'add9'],
+      [/^(m|min|-)6$/, 'min'],
+      [/^(m|min|-)(M7|maj7|△7)$/, 'min'],
+      [/^7(♯|♭|b|#|\+|-)\d+$/, 'dom7'],
+      [/^(dim|°)(M7)?$/, 'dim'],
+    ];
+    const exact = SUFFIXES.find(([suf]) => suf === base);
+    const q = exact ? exact[1] : approxMap.find(([re]) => re.test(base))?.[1];
+    if (!q) return null;
+    hit = ['', q];
+    approx = true;
+  }
+  return { letter, pc: mod12(LETTER_PC[letter] + shift), quality: hit[1], slash, ...(approx ? { approx } : {}) };
+}
+
+/** キーの中でのディグリーに直す。綴り（文字）が保たれるディグリーを優先する */
+export function specFromName(key: KeyDef, letter: number, pc: number, quality: JamQuality): JamChordSpec {
+  const t = parseTonic(key.tonic);
+  const scale = SCALE[key.mode];
+  const deg = (((letter - t.letter) % 7) + 7) % 7; // 0〜6
+  const acc = pc - mod12(t.pc + scale[deg]);
+  const a = ((acc % 12) + 18) % 12 - 6; // -6〜5
+  if (a >= -1 && a <= 1) return { deg: deg + 1, acc: a as -1 | 0 | 1, quality };
+  // 文字が合わない（重変化記号になる）ときは、音の高さだけで探す
+  for (const want of [0, -1, 1] as const) {
+    const i = scale.findIndex((iv) => mod12(t.pc + iv + want) === pc);
+    if (i >= 0) return { deg: i + 1, acc: want, quality };
+  }
+  return { deg: 1, acc: 0, quality };
+}
+
+export interface ParsedList {
+  chords: ParsedChord[];
+  /** 読めなかった語 */
+  unknown: string[];
+}
+
+/** 'Am F G C' や 'Am - F - G - C'、'| C | G/B | Am |' のようなコード譜の並びを読む */
+export function parseChordList(text: string): ParsedList {
+  const chords: ParsedChord[] = [];
+  const unknown: string[] = [];
+  for (const word of text.split(/[\s|,、→>]+|(?:\s-\s)/)) {
+    const w = word.trim();
+    if (!w || w === '-' || w === '/' || w === '%') continue;
+    const c = parseChordName(w);
+    if (c) chords.push(c);
+    else unknown.push(w);
+  }
+  return { chords, unknown };
+}
+
+/** 並んだコードから、いちばん当てはまるキーを推定する */
+export function estimateKey(chords: { pc: number; quality: JamQuality }[]): KeyDef | null {
+  if (chords.length === 0) return null;
+  let best: { key: KeyDef; score: number } | null = null;
+  for (const mode of ['major', 'minor'] as KeyMode[]) {
+    for (const tonic of tonicsFor(mode)) {
+      const key = { tonic, mode };
+      const tpc = parseTonic(tonic).pc;
+      const triads = diatonicSpecs(mode, false).map((s) => resolveJamChord(key, s));
+      const sevenths = diatonicSpecs(mode, true).map((s) => resolveJamChord(key, s));
+      let score = 0;
+      for (const c of chords) {
+        const tones = JAM_QUALITIES[c.quality].tones.map(([iv]) => mod12(c.pc + iv));
+        const fit = tones.filter((pc) => SCALE[mode].some((iv) => mod12(tpc + iv) === pc)).length / tones.length;
+        score += fit * 2;
+        if ([...triads, ...sevenths].some((d) => d.rootPc === c.pc && d.spec.quality === c.quality)) score += 1;
+        // マイナーキーのⅤ7（和声的短音階）は許す
+        if (mode === 'minor' && c.pc === mod12(tpc + 7) && c.quality === 'dom7') score += 1.5;
+      }
+      // 主和音で始まる・終わると、そのキーらしい
+      const tonicQ = mode === 'major' ? ['maj', 'maj7', 'six', 'add9'] : ['min', 'min7'];
+      const isTonic = (c: { pc: number; quality: JamQuality }) => c.pc === tpc && tonicQ.includes(c.quality);
+      if (isTonic(chords[0])) score += 1;
+      if (isTonic(chords[chords.length - 1])) score += 0.5;
+      if (chords.some(isTonic)) score += 0.5;
+      // 平行調（C と Am など）は構成音が同じなので、Ⅴ7 などの手がかりがない限りメジャーにする
+      if (mode === 'minor') score -= 1.1;
+      if (!best || score > best.score + 1e-9) best = { key, score };
+    }
+  }
+  return best!.key;
+}
+
+/** キーを変えても、コード名（鳴る音）を保ったままディグリーを付け直す */
+export function respell(from: KeyDef, to: KeyDef, spec: JamChordSpec): JamChordSpec {
+  const c = resolveJamChord(from, spec);
+  const letter = LETTERS.indexOf(c.name[0]);
+  return specFromName(to, letter, c.rootPc, spec.quality);
 }

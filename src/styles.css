@@ -835,3 +835,40 @@ button.tiny {
     padding: 6px 4px;
   }
 }
+.sheet-input {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.sheet-input textarea {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.05rem;
+  color: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.jam-edit code {
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.jam-edit section h3 {
+  margin-top: 16px;
+}
+.transpose-label {
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .transpose-label {
+    display: none;
+  }
+}
+.custom-chord select {
+  max-width: 100%;
+  min-width: 0;
+}

@@ -90,3 +90,71 @@ it('モードを切り替えたときの主音の綴り', () => {
   expect(tonicForMode('G♯', 'major')).toBe('A♭');
   expect(tonicForMode('A', 'minor')).toBe('A');
 });
+
+import { estimateKey, parseChordList, parseChordName, respell, specFromName } from './jam';
+import { keyName } from './theory';
+
+describe('コード名から', () => {
+  const name = (key: { tonic: string; mode: 'major' | 'minor' }, text: string) => {
+    const c = parseChordName(text)!;
+    return resolveJamChord(key, specFromName(key, c.letter, c.pc, c.quality));
+  };
+
+  it('いろいろな表記を読む', () => {
+    expect(parseChordName('F#m7')).toMatchObject({ pc: 6, quality: 'min7' });
+    expect(parseChordName('Bbmaj7')).toMatchObject({ pc: 10, quality: 'maj7' });
+    expect(parseChordName('B♭M7')).toMatchObject({ pc: 10, quality: 'maj7' });
+    expect(parseChordName('Bm7(b5)')).toMatchObject({ pc: 11, quality: 'm7b5' });
+    expect(parseChordName('Bm7-5')).toMatchObject({ quality: 'm7b5' });
+    expect(parseChordName('C/G')).toMatchObject({ pc: 0, quality: 'maj', slash: 'G' });
+    expect(parseChordName('Am')).toMatchObject({ pc: 9, quality: 'min' });
+    expect(parseChordName('Ｃ')).toBeNull();
+    expect(parseChordName('hello')).toBeNull();
+  });
+
+  it('テンション付きは近いコードにする', () => {
+    expect(parseChordName('C7(9)')).toMatchObject({ quality: 'dom7', approx: true });
+    expect(parseChordName('Dm9')).toMatchObject({ quality: 'min7', approx: true });
+    expect(parseChordName('CM9')).toMatchObject({ quality: 'maj7', approx: true });
+    expect(parseChordName('Gsus2')).toMatchObject({ quality: 'sus2' });
+  });
+
+  it('綴りを保ったままディグリーにする', () => {
+    const C = { tonic: 'C', mode: 'major' as const };
+    expect(name(C, 'Bb').name).toBe('B♭');
+    expect(name(C, 'Bb').degree).toBe('♭Ⅶ');
+    expect(name(C, 'A#').name).toBe('A♯');
+    expect(name(C, 'E7').degree).toBe('Ⅲ7');
+    const Eb = { tonic: 'E♭', mode: 'major' as const };
+    expect(name(Eb, 'Cm').degree).toBe('Ⅵm');
+    expect(name(Eb, 'Fm7').name).toBe('Fm7');
+    const A = { tonic: 'A', mode: 'minor' as const };
+    expect(name(A, 'E7').degree).toBe('Ⅴ7');
+    expect(name(A, 'G').degree).toBe('Ⅶ');
+  });
+
+  it('コード譜の並びを読む', () => {
+    const r = parseChordList('| Am | F - G | C/E  Fmaj7 ？ |');
+    expect(r.chords.map((c) => c.quality)).toEqual(['min', 'maj', 'maj', 'maj', 'maj7']);
+    expect(r.unknown).toEqual(['？']);
+  });
+
+  it('キーを推定する', () => {
+    const est = (t: string) => keyName(estimateKey(parseChordList(t).chords)!);
+    expect(est('F G Em Am')).toBe('C');
+    expect(est('C G Am F')).toBe('C');
+    expect(est('Am Dm E7 Am')).toBe('Am');
+    expect(est('D A Bm G')).toBe('D');
+    expect(est('E♭ B♭ Cm A♭')).toBe('E♭');
+    expect(estimateKey([])).toBeNull();
+  });
+
+  it('キーを変えてもコード名を保つ', () => {
+    const C = { tonic: 'C', mode: 'major' as const };
+    const G = { tonic: 'G', mode: 'major' as const };
+    const spec = { deg: 4, acc: 0 as const, quality: 'maj' as const }; // C キーの F
+    const s = respell(C, G, spec);
+    expect(resolveJamChord(G, s).name).toBe('F');
+    expect(resolveJamChord(G, s).degree).toBe('♭Ⅶ');
+  });
+});
