@@ -489,17 +489,6 @@ function SoundControls({ sound, onChange }: { sound: JamSound; onChange: (s: Jam
         </label>
       )}
       <label>
-        ストローク：{sound.strum === 0 ? 'なし（同時）' : `${Math.round(sound.strum * 1000)}ms`}
-        <input
-          type="range"
-          min={0}
-          max={0.08}
-          step={0.005}
-          value={sound.strum}
-          onChange={(e) => set({ strum: Number(e.target.value) })}
-        />
-      </label>
-      <label>
         コードの音量
         <input type="range" min={0} max={1} step={0.05} value={sound.volume} onChange={(e) => set({ volume: Number(e.target.value) })} />
       </label>
@@ -556,12 +545,13 @@ function useChordVoice() {
         if (state.current.token !== token) return;
         audio.setPianoVolume(sound.volume);
         const t0 = audio.now() + 0.005;
-        s.notes = notes.map((m, i) => ({ midi: m, at: t0 + i * sound.strum }));
+        // 和音は全部の音を同時に鳴らす
+        s.notes = notes.map((m) => ({ midi: m, at: t0 }));
         for (const n of s.notes) audio.noteOn(n.midi, n.midi === bass ? 0.75 : 0.62, n.at);
         if (sound.sustain === 'fixed') {
           s.timer = window.setTimeout(() => {
             if (state.current.token === token) stop();
-          }, (sound.length + sound.strum * notes.length) * 1000);
+          }, sound.length * 1000);
         }
       })
       .catch(() => {});

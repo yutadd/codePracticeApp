@@ -63,14 +63,12 @@ export interface JamSound {
   sustain: JamSustain;
   /** sustain が 'fixed' のときの長さ（秒） */
   length: number;
-  /** ストローク（音をずらして鳴らす間隔、秒） */
-  strum: number;
   bass: boolean;
   /** コードの音量 0〜1 */
   volume: number;
 }
 
-export const DEFAULT_JAM_SOUND: JamSound = { sustain: 'fixed', length: 1.5, strum: 0, bass: true, volume: 0.8 };
+export const DEFAULT_JAM_SOUND: JamSound = { sustain: 'fixed', length: 1.5, bass: true, volume: 0.8 };
 
 /** ⑤フリー演奏に登録した曲 */
 export interface JamSong {
