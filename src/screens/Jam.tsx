@@ -159,6 +159,7 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
   const [palette, setPalette] = useState<'triad' | 'seventh'>('triad');
   const [custom, setCustom] = useState<JamChordSpec>({ deg: 7, acc: -1, quality: 'maj' });
   const preview = useChordVoice();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const vid = youtubeId(song.youtube);
   const set = (patch: Partial<JamSong>) => setSong((s) => ({ ...s, ...patch }));
@@ -357,18 +358,26 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
           保存
         </button>
         <span className="spacer" />
-        {stored && (
-          <button
-            className="danger"
-            onClick={() => {
-              if (!confirm(`「${stored.title || '（無題）'}」を削除します。よろしいですか？`)) return;
-              deleteSong(stored.id);
-              onDeleted();
-            }}
-          >
-            削除
-          </button>
-        )}
+        {stored &&
+          (confirmDelete ? (
+            <>
+              <span className="small">「{stored.title || '（無題）'}」を削除しますか？</span>
+              <button
+                className="danger"
+                onClick={() => {
+                  deleteSong(stored.id);
+                  onDeleted();
+                }}
+              >
+                削除する
+              </button>
+              <button onClick={() => setConfirmDelete(false)}>やめる</button>
+            </>
+          ) : (
+            <button className="danger" onClick={() => setConfirmDelete(true)}>
+              削除
+            </button>
+          ))}
       </div>
     </div>
   );
