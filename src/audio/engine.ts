@@ -28,8 +28,15 @@ class AudioEngine {
 
   /** ユーザー操作の中で呼ぶ（ブラウザの自動再生制限） */
   start(): Promise<void> {
-    if (!this.started) this.started = this.init();
-    else if (this.native?.state === 'suspended') void this.native.resume();
+    if (!this.started) {
+      this.started = this.init().catch((e) => {
+        // 失敗したら次の操作でやり直せるようにする
+        this.started = null;
+        throw e;
+      });
+    } else if (this.native && this.native.state !== 'running') {
+      void this.native.resume().catch(() => {});
+    }
     return this.started;
   }
 

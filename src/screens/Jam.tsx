@@ -532,6 +532,8 @@ function useChordVoice() {
 
   const stop = () => {
     const s = state.current;
+    // まだ鳴り始めていない（音声の準備待ちの）コードも鳴らさないようにする
+    s.token++;
     window.clearTimeout(s.timer);
     const now = audio.now();
     for (const n of s.notes) audio.noteOff(n.midi, Math.max(now, n.at + 0.01));
@@ -542,21 +544,27 @@ function useChordVoice() {
   const play = (chord: JamChord, sound: JamSound): number => {
     const s = state.current;
     stop();
-    if (!audio.isReady) void audio.start();
-    audio.setPianoVolume(sound.volume);
     const upper = voiceChord(chord, s.prev);
     s.prev = upper;
     const bass = sound.bass ? bassNote(chord) : null;
     const notes = bass !== null ? [bass, ...upper] : upper;
-    const t0 = audio.now() + 0.005;
-    s.notes = notes.map((m, i) => ({ midi: m, at: t0 + i * sound.strum }));
-    for (const n of s.notes) audio.noteOn(n.midi, n.midi === bass ? 0.75 : 0.62, n.at);
     const token = ++s.token;
-    if (sound.sustain === 'fixed') {
-      s.timer = window.setTimeout(() => {
-        if (state.current.token === token) stop();
-      }, (sound.length + sound.strum * notes.length) * 1000);
-    }
+    // 音声の準備（初回の作成・止められた音声の再開）が済んでから鳴らす
+    void audio
+      .start()
+      .then(() => {
+        if (state.current.token !== token) return;
+        audio.setPianoVolume(sound.volume);
+        const t0 = audio.now() + 0.005;
+        s.notes = notes.map((m, i) => ({ midi: m, at: t0 + i * sound.strum }));
+        for (const n of s.notes) audio.noteOn(n.midi, n.midi === bass ? 0.75 : 0.62, n.at);
+        if (sound.sustain === 'fixed') {
+          s.timer = window.setTimeout(() => {
+            if (state.current.token === token) stop();
+          }, (sound.length + sound.strum * notes.length) * 1000);
+        }
+      })
+      .catch(() => {});
     setCurrent({ chord, upper, bass });
     setActive(true);
     return token;

@@ -13,6 +13,7 @@
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   color: var(--text);
   background: var(--bg);
+  color-scheme: dark;
 }
 
 * {
@@ -22,6 +23,10 @@
 body {
   margin: 0;
   background: var(--bg);
+  /* 埋め込み先（Artifact など）の既定の文字色・フォントに上書きされないよう、明示する */
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: 16px;
   -webkit-tap-highlight-color: transparent;
 }
 

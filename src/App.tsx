@@ -84,9 +84,12 @@ export function App() {
   }, [settings.monitorMidi]);
   // 最初のタップで音声を有効にする
   useEffect(() => {
+    // スマホのタッチでは pointerdown はユーザー操作として扱われず、指を離したとき（pointerup/touchend）に初めて
+    // 音声を有効にできる。止められた（suspended）音声も、操作のたびに再開を試みる
     const unlock = () => void audio.start();
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
+    const events = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'];
+    events.forEach((e) => window.addEventListener(e, unlock, { capture: true, passive: true }));
+    return () => events.forEach((e) => window.removeEventListener(e, unlock, { capture: true }));
   }, []);
 
   const ref = 'ref' in screen ? screen.ref : null;
