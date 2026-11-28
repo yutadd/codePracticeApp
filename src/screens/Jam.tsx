@@ -660,6 +660,11 @@ function SoundControls({ sound, onChange }: { sound: JamSound; onChange: (s: Jam
         <input type="checkbox" checked={sound.bass} onChange={(e) => set({ bass: e.target.checked })} />
         左手でベース（根音）も鳴らす
       </label>
+      {audio.outputLatencyMs !== null && (
+        <p className="small muted latency-note">
+          この端末の音声出力の遅れ：約{audio.outputLatencyMs}ms（スマホやブラウザ側の遅れで、アプリからは縮められません。アプリ内で開くより Chrome などのブラウザで開く方が短いことがあります）
+        </p>
+      )}
     </div>
   );
 }
@@ -710,7 +715,8 @@ function useChordVoice() {
       .then(() => {
         if (state.current.token !== token) return;
         audio.setPianoVolume(sound.volume);
-        const t0 = audio.now() + 0.005;
+        // 余裕を足さず、すぐに鳴らす
+        const t0 = audio.now();
         // 和音は全部の音を同時に鳴らす
         s.notes = notes.map((m) => ({ midi: m, at: t0 }));
         for (const n of s.notes) audio.noteOn(n.midi, n.midi === bass ? 0.75 : 0.62, n.at);
@@ -957,11 +963,10 @@ export function JamPlay({ songId, onBack, onEdit }: PlayProps) {
               {SUSTAIN_LABEL[song.sound.sustain]}
               {song.sound.sustain === 'fixed' && `（${song.sound.length.toFixed(1)}秒）`}
             </span>
-            {voice.active && (
-              <button className="ghost" onClick={voice.stop}>
-                ■ 音を止める
-              </button>
-            )}
+            {/* 出たり消えたりするとタイルの位置がずれて押し間違えるので、場所は常に取っておく */}
+            <button className="ghost stop-btn" onClick={voice.stop} disabled={!voice.active} aria-hidden={!voice.active}>
+              ■ 音を止める
+            </button>
           </div>
           {showSound && <SoundControls sound={song.sound} onChange={(sound) => update({ sound })} />}
         </div>

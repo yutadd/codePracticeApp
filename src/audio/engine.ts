@@ -6,6 +6,25 @@ const SAMPLE_BASE = 'https://tonejs.github.io/audio/salamander/';
 const SAMPLE_NOTES = ['A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6'];
 
 const PIANO_DB = -4;
+/** ソフトクリップが受け付ける大きさ（これを超える入力は最大値に張り付く）。音量300%でも収まる幅 */
+const CLIP_HEADROOM = 4;
+
+/**
+ * 入力を 1/CLIP_HEADROOM に縮めてから通す曲線。CLIP_HEADROOM 倍して元の大きさに戻すので、
+ * 振幅 0.6 までは元の音のまま（ひずみなし）で、それより大きい音だけを 0.98 に向けてなめらかに抑える
+ */
+function softClipCurve(): Float32Array<ArrayBuffer> {
+  const n = 4097;
+  const curve = new Float32Array(n);
+  const knee = 0.6;
+  const room = 0.98 - knee;
+  for (let i = 0; i < n; i++) {
+    const u = ((i / (n - 1)) * 2 - 1) * CLIP_HEADROOM;
+    const a = Math.abs(u);
+    curve[i] = Math.sign(u) * (a <= knee ? a : knee + room * Math.tanh((a - knee) / room));
+  }
+  return curve;
+}
 const toDb = (v: number) => (v <= 0.001 ? -Infinity : 20 * Math.log10(v));
 
 class AudioEngine {
@@ -53,10 +72,16 @@ class AudioEngine {
 
     this.metronomeVol = new Tone.Volume(0).toDestination();
     this.accompVol = new Tone.Volume(0).toDestination();
-    // ピアノ → 音量 → コンプレッサー → リミッター。音量を標準より上げても（フリー演奏で曲に負けないように）割れないようにする
-    const pianoLimiter = new Tone.Limiter(-1).toDestination();
-    const pianoComp = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.003, release: 0.25 }).connect(pianoLimiter);
-    const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).connect(pianoComp));
+    // ピアノ → 音量 → ソフトクリップ。音量を標準より上げても（フリー演奏で曲に負けないように）割れないようにする。
+    // コンプレッサー／リミッター（DynamicsCompressor）は先読みのため約6msずつ音が遅れるので使わず、
+    // 遅れのない波形変換で、大きい音だけをなめらかに抑える
+    const pre = this.native.createGain();
+    pre.gain.value = 1 / CLIP_HEADROOM;
+    const shaper = this.native.createWaveShaper();
+    shaper.curve = softClipCurve();
+    shaper.oversample = 'none';
+    pre.connect(shaper).connect(this.native.destination);
+    const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).connect(pre));
 
     // 音源ファイルを読み込めないとき（オフライン・埋め込み先の制限）の代わりの音。
     // その場で合成すると、スマホでは処理が追いつかず音が途切れるので、波形を先に作っておいて再生する
@@ -109,6 +134,14 @@ class AudioEngine {
       filterEnvelope: { attack: 0.005, decay: 0.2, sustain: 0.4, release: 0.2, baseFrequency: 200, octaves: 2.5 },
     }).connect(this.accompVol);
     this.bassSynth.volume.value = -4;
+  }
+
+  /** 端末の音声出力の遅れ（ミリ秒）。押してから音が聞こえるまでの、アプリでは縮められない部分 */
+  get outputLatencyMs(): number | null {
+    const c = this.native;
+    if (!c) return null;
+    const ms = ((c.baseLatency || 0) + (c.outputLatency || 0)) * 1000;
+    return ms > 0 ? Math.round(ms) : null;
   }
 
   /** オーディオ時刻（秒） */
