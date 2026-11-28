@@ -927,3 +927,37 @@ button.tile-edit-name.editing .muted {
   text-align: center;
   min-width: 0;
 }
+/* フリー演奏：表示の変化でタイルの位置がずれないようにする */
+.jam-play {
+  overflow-anchor: none;
+}
+.jam-now {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  height: 1.8em;
+  min-height: 1.8em;
+}
+.jam-now > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sound-bar {
+  flex-wrap: nowrap;
+}
+.sound-bar > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stop-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.latency-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
