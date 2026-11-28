@@ -5,6 +5,7 @@ import { midi } from './midi/midi';
 import { Calibration } from './screens/Calibration';
 import { Flash } from './screens/Flash';
 import { Home, UnitMenu } from './screens/Home';
+import { JamEdit, JamList, JamPlay } from './screens/Jam';
 import { Puzzle, PuzzleKind } from './screens/Puzzle';
 import { ScalePractice } from './screens/ScalePractice';
 import { Settings } from './screens/Settings';
@@ -19,6 +20,9 @@ type Screen =
   | { name: 'scale'; ref: UnitRef }
   | { name: 'settings' }
   | { name: 'stats' }
+  | { name: 'jam' }
+  | { name: 'jamEdit'; songId: string | null }
+  | { name: 'jamPlay'; songId: string }
   | { name: 'calibrate'; back: Screen };
 
 const HOME: Screen = { name: 'home' };
@@ -49,6 +53,11 @@ export function App() {
     window.history.pushState({ screen: next, depth: (currentEntry()?.depth ?? 0) + 1 } satisfies HistoryEntry, '');
     setScreen(next);
   };
+  // 今の画面を置き換える（登録→演奏のように、戻るで編集画面に戻らないようにする）
+  const replace = (next: Screen) => {
+    window.history.replaceState({ screen: next, depth: currentEntry()?.depth ?? 0 } satisfies HistoryEntry, '');
+    setScreen(next);
+  };
   // 画面内の「戻る」は親画面＝直前の履歴なので history.back() に揃える。
   // 履歴が無い（リロード後の先頭など）場合は親画面に置き換える
   const back = (parent: Screen) => {
@@ -75,9 +84,12 @@ export function App() {
   }, [settings.monitorMidi]);
   // 最初のタップで音声を有効にする
   useEffect(() => {
+    // スマホのタッチでは pointerdown はユーザー操作として扱われず、指を離したとき（pointerup/touchend）に初めて
+    // 音声を有効にできる。止められた（suspended）音声も、操作のたびに再開を試みる
     const unlock = () => void audio.start();
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
+    const events = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'];
+    events.forEach((e) => window.addEventListener(e, unlock, { capture: true, passive: true }));
+    return () => events.forEach((e) => window.removeEventListener(e, unlock, { capture: true }));
   }, []);
 
   const ref = 'ref' in screen ? screen.ref : null;
@@ -91,6 +103,7 @@ export function App() {
           onSelect={(r) => go(r.level === 'scale' ? { name: 'scale', ref: r } : { name: 'unit', ref: r })}
           onSettings={() => go({ name: 'settings' })}
           onStats={() => go({ name: 'stats' })}
+          onJam={() => go({ name: 'jam' })}
         />
       );
     case 'unit':
@@ -123,6 +136,33 @@ export function App() {
       );
     case 'stats':
       return <Stats onExit={() => back(HOME)} />;
+    case 'jam':
+      return (
+        <JamList
+          onBack={() => back(HOME)}
+          onPlay={(songId) => go({ name: 'jamPlay', songId })}
+          onEdit={(songId) => go({ name: 'jamEdit', songId })}
+        />
+      );
+    case 'jamEdit':
+      return (
+        <JamEdit
+          key={screen.songId ?? 'new'}
+          songId={screen.songId}
+          onCancel={() => back({ name: 'jam' })}
+          onSaved={(songId, play) => (play ? replace({ name: 'jamPlay', songId }) : back({ name: 'jam' }))}
+          onDeleted={() => back({ name: 'jam' })}
+        />
+      );
+    case 'jamPlay':
+      return (
+        <JamPlay
+          key={screen.songId}
+          songId={screen.songId}
+          onBack={() => back({ name: 'jam' })}
+          onEdit={() => go({ name: 'jamEdit', songId: screen.songId })}
+        />
+      );
     case 'calibrate':
       return <Calibration onExit={() => back(screen.back)} />;
   }

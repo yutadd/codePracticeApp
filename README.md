@@ -39,7 +39,9 @@ Windows ではルートの `start.bat` `stop.bat` `reset-progress.bat` `clear-al
 | `server/progressDb.mjs` | SQLite（`data/progress.db`）の読み書きと `/api/progress`（Vite プラグイン） |
 | `scripts/` | 起動・終了・リセット・全クリのスクリプト |
 | `src/music/scale.ts` | ④スケール練習のお題と判定 |
-| `src/screens/` | 各画面（ホーム、①フラッシュ、③パズル、④スケール練習、遅延補正、設定、記録） |
+| `src/music/jam.ts` | ⑤フリー演奏のコード（ディグリー＋種類）、ヴォイシング、YouTube URL の解析 |
+| `src/components/YouTubePlayer.tsx` | YouTube の埋め込み（IFrame Player API） |
+| `src/screens/` | 各画面（ホーム、①フラッシュ、③パズル、④スケール練習、⑤フリー演奏、遅延補正、設定、記録） |
 
 ## 進捗の保存
 
@@ -87,6 +89,14 @@ npm run deploy:aws     # ビルドして S3 + CloudFront に配信し、URL を�
 - https は CloudFront の既定ドメイン（`https://xxxx.cloudfront.net/`）のものを使うので、Web MIDI も証明書の警告なしで使えます。
 - 進捗は端末（ブラウザ）ごとで、PC版の SQLite とは共有しません。
 - 片付けるときは S3 バケットを空にしてから `aws cloudformation delete-stack --stack-name code-practice-app` を実行します。
+
+## 静的配信版（GitHub Pages）
+
+`main` に push すると、GitHub Actions（`.github/workflows/pages.yml`）がテスト・ビルドして `https://<ユーザー>.github.io/<リポジトリ>/` に公開します。Actions タブの「GitHub Pages」から手動でも実行できます。
+
+- 初回だけ、リポジトリの **Settings → Pages → Build and deployment → Source** を「**GitHub Actions**」にしてください。
+- サブパスで配信するため、ビルド時に `BASE_PATH=/<リポジトリ名>/` を渡しています（ワークフローで自動）。
+- https で配信されるので、⑤フリー演奏の YouTube 埋め込みや Web MIDI も使えます。進捗は AWS 版と同じくブラウザごとです。
 
 ## 仕様書から補った解釈
 
