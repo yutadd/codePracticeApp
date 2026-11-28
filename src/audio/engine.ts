@@ -1,5 +1,6 @@
 // Tone.js による発音：ピアノ、メトロノーム、ドラム、ベース
 import * as Tone from 'tone';
+import { BufferPiano } from './bufferPiano';
 
 const SAMPLE_BASE = 'https://tonejs.github.io/audio/salamander/';
 const SAMPLE_NOTES = ['A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6'];
@@ -12,7 +13,8 @@ class AudioEngine {
   private started: Promise<void> | null = null;
 
   private pianoSampler: Tone.Sampler | null = null;
-  private pianoFallback: Tone.PolySynth | null = null;
+  /** 音源ファイルを読み込めないときの代わり（事前に作った波形を再生するだけなので軽い） */
+  private pianoFallback: BufferPiano | null = null;
   private samplerLoaded = false;
 
   private clickSynth!: Tone.Synth;
@@ -56,12 +58,12 @@ class AudioEngine {
     const pianoComp = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.003, release: 0.25 }).connect(pianoLimiter);
     const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).connect(pianoComp));
 
-    // 音源ファイルを読み込めないとき（オフライン・埋め込み先の制限）の代わりの音。曲の中でも聞き取れるよう、やや太く明るい音にする
-    this.pianoFallback = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fattriangle', count: 3, spread: 18 },
-      envelope: { attack: 0.004, decay: 0.8, sustain: 0.35, release: 0.8 },
-    }).connect(pianoVol);
-    this.pianoFallback.volume.value = -3;
+    // 音源ファイルを読み込めないとき（オフライン・埋め込み先の制限）の代わりの音。
+    // その場で合成すると、スマホでは処理が追いつかず音が途切れるので、波形を先に作っておいて再生する
+    const fallbackOut = this.native.createGain();
+    Tone.connect(fallbackOut, pianoVol);
+    this.pianoFallback = new BufferPiano(this.native, fallbackOut);
+    this.pianoFallback.warmUp();
     this.pianoSampler = new Tone.Sampler({
       urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, n.replace('#', 's') + '.mp3'])),
       baseUrl: SAMPLE_BASE,
@@ -144,14 +146,13 @@ class AudioEngine {
     if (this.pianoVol) this.pianoVol.volume.value = PIANO_DB + toDb(v);
   }
 
-  private piano() {
-    return this.samplerLoaded && this.pianoSampler ? this.pianoSampler : this.pianoFallback;
+  private get useSampler() {
+    return this.samplerLoaded && this.pianoSampler !== null;
   }
 
   playNote(midi: number, dur = 0.8, time?: number, velocity = 0.8) {
-    const p = this.piano();
-    if (!p) return;
-    p.triggerAttackRelease(Tone.Frequency(midi, 'midi').toNote(), dur, time, velocity);
+    if (this.useSampler) this.pianoSampler!.triggerAttackRelease(Tone.Frequency(midi, 'midi').toNote(), dur, time, velocity);
+    else this.pianoFallback?.triggerAttackRelease(midi, dur, time, velocity);
   }
 
   playChord(midis: number[], dur = 1.6, arpeggio = 0) {
@@ -161,11 +162,14 @@ class AudioEngine {
 
   /** 押している間だけ鳴らす（MIDIモニター用） */
   noteOn(midi: number, velocity = 0.8, time?: number) {
-    this.piano()?.triggerAttack(Tone.Frequency(midi, 'midi').toNote(), time, velocity);
+    if (this.useSampler) this.pianoSampler!.triggerAttack(Tone.Frequency(midi, 'midi').toNote(), time, velocity);
+    else this.pianoFallback?.triggerAttack(midi, time, velocity);
   }
 
   noteOff(midi: number, time?: number) {
-    this.piano()?.triggerRelease(Tone.Frequency(midi, 'midi').toNote(), time);
+    // 鳴らしている間に音源の読み込みが終わって切り替わっても止められるよう、両方に送る
+    if (this.samplerLoaded) this.pianoSampler?.triggerRelease(Tone.Frequency(midi, 'midi').toNote(), time);
+    this.pianoFallback?.triggerRelease(midi, time);
   }
 
   click(time: number, accent: boolean) {
