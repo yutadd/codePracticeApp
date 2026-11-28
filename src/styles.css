@@ -877,3 +877,53 @@ button.tiny {
   max-width: 100%;
   min-width: 0;
 }
+button.tile-edit-name {
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+button.tile-edit-name.editing {
+  background: var(--accent);
+  color: #0b1220;
+}
+button.tile-edit-name.editing .muted {
+  color: #0b1220;
+}
+.note-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.note-picker .row {
+  margin-top: 0;
+}
+.note-picker .row .spacer {
+  flex: 1;
+}
+.note-picker .keyboard {
+  margin-top: 0;
+  min-height: 110px;
+}
+.picker-octave {
+  justify-content: space-between;
+}
+.picker-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  min-height: 1.5em;
+}
+.picker-result b {
+  font-size: 1.15rem;
+}
+.picker-octave {
+  flex-wrap: nowrap;
+}
+.picker-octave button {
+  white-space: nowrap;
+  padding: 6px 10px;
+}
+.picker-octave span {
+  text-align: center;
+  min-width: 0;
+}

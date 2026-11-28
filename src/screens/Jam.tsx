@@ -20,6 +20,13 @@ import {
   ROOT_NAMES,
   sameSpec,
   specFromName,
+  specFromNotes,
+  transposeSpec,
+  noteLabel,
+  playedNotes,
+  PICK_LOW,
+  PICK_HIGH,
+  VOICE_LOW,
   tonicForMode,
   tonicsFor,
   voiceChord,
@@ -168,6 +175,11 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
   const [sheetMsg, setSheetMsg] = useState<{ ok: string; ng: string; note?: string } | null>(null);
   // 新しい曲で、まだキーを自分で選んでいなければ、コード譜からキーを決める
   const [keyChosen, setKeyChosen] = useState(!!stored);
+  // 鍵盤で音を選ぶ
+  const [pickNotes, setPickNotes] = useState<number[]>([]);
+  const [pickStart, setPickStart] = useState(48);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const preview = useChordVoice();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -216,8 +228,23 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
       note: approx.length ? 'テンションや分数コード（/の右側）は省いて、近いコードで鳴らします。' : '',
     });
   };
+  const pickSpec = () => specFromNotes(song.key, pickNotes);
+  /** タイルの音を鍵盤で直す：今鳴っている音を鍵盤に読み込む */
+  const startEdit = (i: number) => {
+    const notes = playedNotes(resolveJamChord(song.key, song.chords[i]), song.sound.bass);
+    setPickNotes(notes);
+    setPickStart(Math.min(PICK_HIGH - PICK_SPAN, Math.max(PICK_LOW, Math.floor(Math.min(...notes) / 12) * 12)));
+    setEditIndex(i);
+    pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
   const guess = useMemo(
-    () => estimateKey(song.chords.map((c) => resolveJamChord(song.key, c)).map((c) => ({ pc: c.rootPc, quality: c.spec.quality }))),
+    () =>
+      estimateKey(
+        song.chords
+          .filter((c) => !c.unnamed)
+          .map((c) => resolveJamChord(song.key, c))
+          .map((c) => ({ pc: c.rootPc, quality: c.spec.quality })),
+      ),
     [song.key, song.chords],
   );
   const move = (i: number, d: number) => {
@@ -226,8 +253,13 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
     const chords = [...song.chords];
     [chords[i], chords[j]] = [chords[j], chords[i]];
     set({ chords });
+    if (editIndex === i) setEditIndex(j);
+    else if (editIndex === j) setEditIndex(i);
   };
-  const remove = (i: number) => set({ chords: song.chords.filter((_, k) => k !== i) });
+  const remove = (i: number) => {
+    set({ chords: song.chords.filter((_, k) => k !== i) });
+    setEditIndex(null);
+  };
 
   const save = (play: boolean) => {
     saveSong({ ...song, title: song.title.trim() });
@@ -300,7 +332,9 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
 
       <section>
         <h3>使うコード（{song.chords.length}）</h3>
-        <p className="small muted">タイルの順に並びます。‹ › で並べ替え、× で外せます。</p>
+        <p className="small muted">
+          タイルの順に並びます。‹ › で並べ替え、× で外せます。コード名をタップすると、鳴らす音を鍵盤で確かめて直せます（🎹＝鍵盤で選んだ音）。
+        </p>
         <div className="tile-edit-list">
           {song.chords.map((c, i) => {
             const chord = resolveJamChord(song.key, c);
@@ -309,10 +343,17 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
                 <button className="ghost tiny" onClick={() => move(i, -1)} disabled={i === 0} aria-label="左へ">
                   ‹
                 </button>
-                <span className="tile-edit-name">
+                <button
+                  className={`ghost tile-edit-name ${editIndex === i ? 'editing' : ''}`}
+                  onClick={() => startEdit(i)}
+                  title="鍵盤で音を直す"
+                >
                   <b>{chord.name}</b>
-                  <span className="small muted">{chord.degree}</span>
-                </span>
+                  <span className="small muted">
+                    {chord.degree || '　'}
+                    {c.notes && ' 🎹'}
+                  </span>
+                </button>
                 <button className="ghost tiny" onClick={() => move(i, 1)} disabled={i === song.chords.length - 1} aria-label="右へ">
                   ›
                 </button>
@@ -369,6 +410,38 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
             ))}
           </select>
           <button onClick={addCustom}>{customRoot + JAM_QUALITIES[customQ].suffix} を追加</button>
+        </div>
+
+        <div ref={pickerRef}>
+          <h3>{editIndex !== null ? '鍵盤で音を直す' : '鍵盤で音を選んで追加'}</h3>
+          <p className="small muted">
+            思っていた響きと違うときは、鳴らしたい音を鍵盤で選んでください。選んだ音からコード名を判定し、その音のまま鳴らします。
+          </p>
+          <NotePicker
+            songKey={song.key}
+            notes={pickNotes}
+            setNotes={setPickNotes}
+            start={pickStart}
+            setStart={setPickStart}
+            editing={editIndex !== null && song.chords[editIndex] ? resolveJamChord(song.key, song.chords[editIndex]).name : null}
+            onPreview={() => preview.play(resolveJamChord(song.key, pickSpec()), { ...song.sound, sustain: 'fixed' })}
+            onAdd={() => {
+              add(pickSpec());
+              setPickNotes([]);
+            }}
+            onReplace={() => {
+              if (editIndex === null) return;
+              const spec = pickSpec();
+              set({ chords: song.chords.map((c, k) => (k === editIndex ? spec : c)) });
+              preview.play(resolveJamChord(song.key, spec), { ...song.sound, sustain: 'fixed' });
+              setEditIndex(null);
+              setPickNotes([]);
+            }}
+            onCancelEdit={() => {
+              setEditIndex(null);
+              setPickNotes([]);
+            }}
+          />
         </div>
 
         <h3>このキーでよく使うコード</h3>
@@ -459,6 +532,96 @@ export function JamEdit({ songId, onCancel, onSaved, onDeleted }: EditProps) {
   );
 }
 
+// ---- 鍵盤で音を選ぶ ----
+
+/** 一度に見せる鍵盤の幅（半音）。ベース＋和音が収まるよう3オクターブ */
+const PICK_SPAN = 36;
+
+interface PickerProps {
+  songKey: KeyDef;
+  notes: number[];
+  setNotes: (n: number[]) => void;
+  start: number;
+  setStart: (n: number) => void;
+  editing: string | null;
+  onPreview: () => void;
+  onAdd: () => void;
+  onReplace: () => void;
+  onCancelEdit: () => void;
+}
+
+function NotePicker({ songKey, notes, setNotes, start, setStart, editing, onPreview, onAdd, onReplace, onCancelEdit }: PickerProps) {
+  const selected = new Set(notes);
+  const marks = new Map<number, KeyMark>();
+  notes.forEach((m) => marks.set(m, 'held'));
+  const chord = notes.length > 0 ? resolveJamChord(songKey, specFromNotes(songKey, notes)) : null;
+  const toggle = (m: number) => {
+    if (selected.has(m)) setNotes(notes.filter((x) => x !== m));
+    else {
+      setNotes([...notes, m].sort((a, b) => a - b));
+      void audio
+        .start()
+        .then(() => audio.playNote(m, 0.6))
+        .catch(() => {});
+    }
+  };
+  const label = (m: number) => (selected.has(m) ? noteLabel(m, songKey).replace(/-?\d+$/, '') : mod12(m) === 0 ? noteLabel(m, songKey) : null);
+  const outside = notes.filter((m) => m < start || m > start + PICK_SPAN).length;
+  return (
+    <div className="note-picker">
+      <div className="row picker-octave">
+        <button onClick={() => setStart(Math.max(PICK_LOW, start - 12))} disabled={start <= PICK_LOW}>
+          ◀ 低く
+        </button>
+        <span className="small muted">
+          {noteLabel(start, songKey)}〜{noteLabel(start + PICK_SPAN, songKey)}
+          {outside > 0 && `（外に${outside}音）`}
+        </span>
+        <button onClick={() => setStart(Math.min(PICK_HIGH - PICK_SPAN, start + 12))} disabled={start >= PICK_HIGH - PICK_SPAN}>
+          高く ▶
+        </button>
+      </div>
+      <Keyboard start={start} octaves={PICK_SPAN / 12} marks={marks} label={label} onPress={toggle} height="150px" />
+      <div className="picker-result">
+        {chord ? (
+          <>
+            <span className="small muted">{notes.map((m) => noteLabel(m, songKey)).join(' ')}</span>
+            <span>
+              → <b>{chord.name}</b> {chord.degree && <span className="muted small">{chord.degree}</span>}
+              {chord.spec.unnamed && <span className="muted small">（コード名なし。選んだ音のまま鳴らします）</span>}
+            </span>
+          </>
+        ) : (
+          <span className="small muted">鍵盤をタップして、鳴らしたい音を選んでください（もう一度タップで外す）。</span>
+        )}
+      </div>
+      <div className="row">
+        <button onClick={onPreview} disabled={notes.length === 0}>
+          ♪ 鳴らす
+        </button>
+        <button className="ghost" onClick={() => setNotes([])} disabled={notes.length === 0}>
+          クリア
+        </button>
+        <span className="spacer" />
+        {editing !== null ? (
+          <>
+            <button className="ghost" onClick={onCancelEdit}>
+              やめる
+            </button>
+            <button className="primary" onClick={onReplace} disabled={notes.length === 0}>
+              「{editing}」をこの音にする
+            </button>
+          </>
+        ) : (
+          <button className="primary" onClick={onAdd} disabled={notes.length === 0}>
+            {chord ? `${chord.name} を追加` : '追加'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- 音の設定 ----
 
 function SoundControls({ sound, onChange }: { sound: JamSound; onChange: (s: JamSound) => void }) {
@@ -533,9 +696,11 @@ function useChordVoice() {
   const play = (chord: JamChord, sound: JamSound): number => {
     const s = state.current;
     stop();
-    const upper = voiceChord(chord, s.prev);
-    s.prev = upper;
-    const bass = sound.bass ? bassNote(chord) : null;
+    // 鍵盤で選んだ音は、そのまま鳴らす（ベースも足さない）
+    const upper = chord.fixedNotes ?? voiceChord(chord, s.prev);
+    s.prev = chord.fixedNotes ? chord.fixedNotes.filter((m) => m >= VOICE_LOW) : upper;
+    if (s.prev.length === 0) s.prev = null;
+    const bass = sound.bass && !chord.fixedNotes ? bassNote(chord) : null;
     const notes = bass !== null ? [bass, ...upper] : upper;
     const token = ++s.token;
     // 音声の準備（初回の作成・止められた音声の再開）が済んでから鳴らす
@@ -687,8 +852,9 @@ export function JamPlay({ songId, onBack, onEdit }: PlayProps) {
   }
 
   const cur = voice.current;
-  const kbStart = song.sound.bass ? 36 : 48;
-  const kbOctaves = song.sound.bass ? 4 : 3;
+  const low = song.sound.bass || chords.some((c) => c.fixedNotes && Math.min(...c.fixedNotes) < 48);
+  const kbStart = low ? 36 : 48;
+  const kbOctaves = low ? 4 : 3;
   const marks = new Map<number, KeyMark>();
   const names = new Map<number, string>();
   if (cur) {
@@ -716,7 +882,7 @@ export function JamPlay({ songId, onBack, onEdit }: PlayProps) {
           value={song.key}
           onChange={(key) => {
             voice.resetVoicing();
-            update({ key });
+            update({ key, chords: song.chords.map((c) => transposeSpec(song.key, key, c)) });
           }}
         />
         <button className="ghost" onClick={onEdit}>

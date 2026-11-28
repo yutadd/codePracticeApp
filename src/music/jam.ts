@@ -1,5 +1,5 @@
 // ⑤フリー演奏：タイルのコード（ディグリー＋変化記号＋種類）と、キーへの当てはめ・ヴォイシング
-import { KeyDef, KeyMode, mod12, parseTonic, ROMAN, SCALE, spell } from './theory';
+import { KeyDef, keyPrefersFlat, KeyMode, midiName, mod12, parseTonic, pcName, ROMAN, SCALE, spell } from './theory';
 
 export type JamQuality =
   | 'maj'
@@ -15,7 +15,8 @@ export type JamQuality =
   | 'dim7'
   | '7sus4'
   | 'six'
-  | 'add9';
+  | 'add9'
+  | 'five';
 
 interface QualityDef {
   suffix: string;
@@ -39,6 +40,7 @@ export const JAM_QUALITIES: Record<JamQuality, QualityDef> = {
   '7sus4': { suffix: '7sus4', tones: [[0, 0], [5, 3], [7, 4], [10, 6]], label: '7sus4' },
   six: { suffix: '6', tones: [[0, 0], [4, 2], [7, 4], [9, 5]], label: '6' },
   add9: { suffix: 'add9', tones: [[0, 0], [4, 2], [7, 4], [14, 1]], label: 'add9' },
+  five: { suffix: '5', tones: [[0, 0], [7, 4]], label: '5（パワーコード）' },
 };
 
 export const JAM_QUALITY_ORDER = Object.keys(JAM_QUALITIES) as JamQuality[];
@@ -49,6 +51,10 @@ export interface JamChordSpec {
   /** スケールの音からのずれ（-1＝♭, +1＝♯） */
   acc: -1 | 0 | 1;
   quality: JamQuality;
+  /** 鍵盤で選んだ音（MIDI、低い順）。あれば、この音をそのまま鳴らす */
+  notes?: number[];
+  /** notes がコード名にならないとき true（名前は音名を並べて出す） */
+  unnamed?: boolean;
 }
 
 export interface JamChord {
@@ -60,6 +66,8 @@ export interface JamChord {
   rootPc: number;
   /** 根音から順の音（pc と綴り） */
   tones: { pc: number; name: string }[];
+  /** 鍵盤で選んだ音。あればヴォイシングせずにこの音を鳴らす */
+  fixedNotes?: number[];
 }
 
 const ACC_PREFIX = { [-1]: '♭', 0: '', 1: '♯' } as const;
@@ -69,6 +77,7 @@ export function jamDegreeLabel(spec: JamChordSpec): string {
 }
 
 export function resolveJamChord(key: KeyDef, spec: JamChordSpec): JamChord {
+  if (spec.notes && spec.notes.length > 0) return resolveNotes(key, spec, spec.notes);
   const t = parseTonic(key.tonic);
   const letter = t.letter + spec.deg - 1;
   const rootPc = mod12(t.pc + SCALE[key.mode][spec.deg - 1] + spec.acc);
@@ -103,7 +112,41 @@ export function diatonicSpecs(mode: KeyMode, seventh: boolean): JamChordSpec[] {
 }
 
 export const sameSpec = (a: JamChordSpec, b: JamChordSpec) =>
-  a.deg === b.deg && a.acc === b.acc && a.quality === b.quality;
+  a.deg === b.deg && a.acc === b.acc && a.quality === b.quality && (a.notes ?? []).join() === (b.notes ?? []).join();
+
+/** 鍵盤で選んだ音のタイル：判定できたコード名（最低音が根音でなければ分数コード）か、音名の並び */
+function resolveNotes(key: KeyDef, spec: JamChordSpec, raw: number[]): JamChord {
+  const notes = [...raw].sort((a, b) => a - b);
+  const base = spec.unnamed ? null : resolveJamChord(key, { deg: spec.deg, acc: spec.acc, quality: spec.quality });
+  const flat = keyPrefersFlat(key);
+  const spellPc = (pc: number) => base?.tones.find((t) => t.pc === pc)?.name ?? pcName(pc, flat);
+  const pcs = [...new Set(notes.map(mod12))];
+  const bassPc = mod12(notes[0]);
+  if (!base) {
+    return {
+      spec,
+      degree: '',
+      name: pcs.map(spellPc).join('・'),
+      rootPc: bassPc,
+      tones: pcs.map((pc) => ({ pc, name: spellPc(pc) })),
+      fixedNotes: notes,
+    };
+  }
+  return {
+    ...base,
+    spec,
+    name: base.name + (bassPc !== base.rootPc ? `/${spellPc(bassPc)}` : ''),
+    fixedNotes: notes,
+  };
+}
+
+/** 鍵盤の範囲（選べる音・表示する音） */
+export const PICK_LOW = 36; // C2
+export const PICK_HIGH = 84; // C6
+
+export function noteLabel(m: number, key: KeyDef): string {
+  return midiName(m, keyPrefersFlat(key));
+}
 
 // ---- 進行のプリセット（メジャーキー基準のディグリーで書く） ----
 
@@ -283,6 +326,7 @@ const SUFFIXES: [string, JamQuality][] = [
   ['add9', 'add9'],
   ['sus4', 'sus4'],
   ['sus2', 'sus2'],
+  ['5', 'five'],
   ['sus', 'sus4'],
   ['min7', 'min7'],
   ['M7', 'maj7'],
@@ -346,6 +390,49 @@ export function parseChordName(text: string): ParsedChord | null {
 }
 
 /** キーの中でのディグリーに直す。綴り（文字）が保たれるディグリーを優先する */
+/** 根音の高さだけからディグリーにする（変化記号なし → ♭ → ♯ の順に探す） */
+export function specFromPc(key: KeyDef, pc: number, quality: JamQuality): JamChordSpec {
+  const t = parseTonic(key.tonic);
+  for (const want of [0, -1, 1] as const) {
+    const i = SCALE[key.mode].findIndex((iv) => mod12(t.pc + iv + want) === pc);
+    if (i >= 0) return { deg: i + 1, acc: want, quality };
+  }
+  return { deg: 1, acc: 0, quality };
+}
+
+/** 鍵盤で選んだ音からタイルを作る。最低音を根音とみなせるコードを優先し、なければ転回形・分数コードとして探す */
+export function specFromNotes(key: KeyDef, raw: number[]): JamChordSpec {
+  const notes = [...new Set(raw)].sort((a, b) => a - b);
+  const pcs = new Set(notes.map(mod12));
+  const bassPc = mod12(notes[0]);
+  const roots = [bassPc, ...[...new Set(notes.map(mod12))].filter((pc) => pc !== bassPc)];
+  for (const root of roots) {
+    for (const q of JAM_QUALITY_ORDER) {
+      const qp = new Set(JAM_QUALITIES[q].tones.map(([iv]) => mod12(root + iv)));
+      if (qp.size === pcs.size && [...qp].every((pc) => pcs.has(pc))) return { ...specFromPc(key, root, q), notes };
+    }
+  }
+  return { ...specFromPc(key, bassPc, 'maj'), notes, unnamed: true };
+}
+
+/** タイルが実際に鳴らす音（鍵盤で選んだ音、またはベース＋基本のヴォイシング） */
+export function playedNotes(chord: JamChord, bass: boolean): number[] {
+  if (chord.fixedNotes) return chord.fixedNotes;
+  const upper = voiceChord(chord, null);
+  return bass ? [bassNote(chord), ...upper] : upper;
+}
+
+/** 演奏画面の移調：ディグリーはそのまま、鍵盤で選んだ音は同じ幅だけずらす */
+export function transposeSpec(from: KeyDef, to: KeyDef, spec: JamChordSpec): JamChordSpec {
+  if (!spec.notes) return spec;
+  let d = mod12(parseTonic(to.tonic).pc - parseTonic(from.tonic).pc);
+  if (d > 6) d -= 12;
+  let notes = spec.notes.map((n) => n + d);
+  if (Math.min(...notes) < PICK_LOW) notes = notes.map((n) => n + 12);
+  if (Math.max(...notes) > PICK_HIGH) notes = notes.map((n) => n - 12);
+  return specFromNotes(to, notes);
+}
+
 export function specFromName(key: KeyDef, letter: number, pc: number, quality: JamQuality): JamChordSpec {
   const t = parseTonic(key.tonic);
   const scale = SCALE[key.mode];
@@ -354,11 +441,7 @@ export function specFromName(key: KeyDef, letter: number, pc: number, quality: J
   const a = ((acc % 12) + 18) % 12 - 6; // -6〜5
   if (a >= -1 && a <= 1) return { deg: deg + 1, acc: a as -1 | 0 | 1, quality };
   // 文字が合わない（重変化記号になる）ときは、音の高さだけで探す
-  for (const want of [0, -1, 1] as const) {
-    const i = scale.findIndex((iv) => mod12(t.pc + iv + want) === pc);
-    if (i >= 0) return { deg: i + 1, acc: want, quality };
-  }
-  return { deg: 1, acc: 0, quality };
+  return specFromPc(key, pc, quality);
 }
 
 export interface ParsedList {
@@ -416,6 +499,7 @@ export function estimateKey(chords: { pc: number; quality: JamQuality }[]): KeyD
 
 /** キーを変えても、コード名（鳴る音）を保ったままディグリーを付け直す */
 export function respell(from: KeyDef, to: KeyDef, spec: JamChordSpec): JamChordSpec {
+  if (spec.notes) return specFromNotes(to, spec.notes);
   const c = resolveJamChord(from, spec);
   const letter = LETTERS.indexOf(c.name[0]);
   return specFromName(to, letter, c.rootPc, spec.quality);

@@ -158,3 +158,45 @@ describe('コード名から', () => {
     expect(resolveJamChord(G, s).degree).toBe('♭Ⅶ');
   });
 });
+
+import { playedNotes, specFromNotes, transposeSpec } from './jam';
+
+describe('鍵盤で選んだ音', () => {
+  const C = { tonic: 'C', mode: 'major' as const };
+  const r = (notes: number[], key = C) => resolveJamChord(key, specFromNotes(key, notes));
+
+  it('コード名を判定する', () => {
+    expect(r([48, 52, 55]).name).toBe('C');
+    expect(r([48, 52, 55]).degree).toBe('Ⅰ');
+    expect(r([57, 60, 64, 67]).name).toBe('Am7');
+    expect(r([48, 52, 55, 57]).name).toBe('C6'); // 最低音を根音とみなす
+    expect(r([50, 53, 57, 60]).name).toBe('Dm7');
+    expect(r([43, 50]).name).toBe('G5');
+  });
+
+  it('最低音が根音でなければ分数コード', () => {
+    expect(r([52, 55, 60]).name).toBe('C/E');
+    expect(r([47, 55, 62, 67]).name).toBe('G/B');
+  });
+
+  it('判定できない音はそのまま並べる', () => {
+    const c = r([60, 61]);
+    expect(c.spec.unnamed).toBe(true);
+    expect(c.name).toBe('C・C♯');
+    expect(c.fixedNotes).toEqual([60, 61]);
+  });
+
+  it('選んだ音をそのまま鳴らす', () => {
+    expect(playedNotes(r([52, 55, 60]), true)).toEqual([52, 55, 60]);
+    const g = resolveJamChord(C, { deg: 5, acc: 0, quality: 'maj' });
+    expect(playedNotes(g, true)[0]).toBe(bassNote(g));
+  });
+
+  it('移調すると同じ幅だけずれる', () => {
+    const spec = specFromNotes(C, [52, 55, 60]); // C/E
+    const D = { tonic: 'D', mode: 'major' as const };
+    const t = transposeSpec(C, D, spec);
+    expect(t.notes).toEqual([54, 57, 62]);
+    expect(resolveJamChord(D, t).name).toBe('D/F♯');
+  });
+});
