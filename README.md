@@ -90,6 +90,14 @@ npm run deploy:aws     # ビルドして S3 + CloudFront に配信し、URL を�
 - 進捗は端末（ブラウザ）ごとで、PC版の SQLite とは共有しません。
 - 片付けるときは S3 バケットを空にしてから `aws cloudformation delete-stack --stack-name code-practice-app` を実行します。
 
+## 静的配信版（GitHub Pages）
+
+`main` に push すると、GitHub Actions（`.github/workflows/pages.yml`）がテスト・ビルドして `https://<ユーザー>.github.io/<リポジトリ>/` に公開します。Actions タブの「GitHub Pages」から手動でも実行できます。
+
+- 初回だけ、リポジトリの **Settings → Pages → Build and deployment → Source** を「**GitHub Actions**」にしてください。
+- サブパスで配信するため、ビルド時に `BASE_PATH=/<リポジトリ名>/` を渡しています（ワークフローで自動）。
+- https で配信されるので、⑤フリー演奏の YouTube 埋め込みや Web MIDI も使えます。進捗は AWS 版と同じくブラウザごとです。
+
 ## 仕様書から補った解釈
 
 遊びながら調整する前提で、仕様書に書かれていない部分は次のように決めています。
