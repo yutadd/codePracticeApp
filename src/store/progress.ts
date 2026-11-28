@@ -64,11 +64,11 @@ export interface JamSound {
   /** sustain が 'fixed' のときの長さ（秒） */
   length: number;
   bass: boolean;
-  /** コードの音量 0〜1 */
+  /** コードの音量 0〜3（1 が標準） */
   volume: number;
 }
 
-export const DEFAULT_JAM_SOUND: JamSound = { sustain: 'fixed', length: 1.5, bass: true, volume: 0.8 };
+export const DEFAULT_JAM_SOUND: JamSound = { sustain: 'fixed', length: 1.5, bass: true, volume: 1.5 };
 
 /** ⑤フリー演奏に登録した曲 */
 export interface JamSong {

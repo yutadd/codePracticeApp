@@ -652,8 +652,9 @@ function SoundControls({ sound, onChange }: { sound: JamSound; onChange: (s: Jam
         </label>
       )}
       <label>
-        コードの音量
-        <input type="range" min={0} max={1} step={0.05} value={sound.volume} onChange={(e) => set({ volume: Number(e.target.value) })} />
+        コードの音量：{Math.round(sound.volume * 100)}%
+        <input type="range" min={0} max={3} step={0.1} value={sound.volume} onChange={(e) => set({ volume: Number(e.target.value) })} />
+        <span className="small muted">100%より上げると、曲に負けにくくなります（音が割れないよう自動で抑えます）</span>
       </label>
       <label className="check">
         <input type="checkbox" checked={sound.bass} onChange={(e) => set({ bass: e.target.checked })} />
@@ -915,8 +916,8 @@ export function JamPlay({ songId, onBack, onEdit }: PlayProps) {
                 <input
                   type="range"
                   min={0}
-                  max={1}
-                  step={0.05}
+                  max={3}
+                  step={0.1}
                   value={song.sound.volume}
                   onChange={(e) => update({ sound: { ...song.sound, volume: Number(e.target.value) } })}
                   aria-label="コードの音量"

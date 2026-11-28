@@ -51,13 +51,17 @@ class AudioEngine {
 
     this.metronomeVol = new Tone.Volume(0).toDestination();
     this.accompVol = new Tone.Volume(0).toDestination();
-    const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).toDestination());
+    // ピアノ → 音量 → コンプレッサー → リミッター。音量を標準より上げても（フリー演奏で曲に負けないように）割れないようにする
+    const pianoLimiter = new Tone.Limiter(-1).toDestination();
+    const pianoComp = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.003, release: 0.25 }).connect(pianoLimiter);
+    const pianoVol = (this.pianoVol = new Tone.Volume(PIANO_DB).connect(pianoComp));
 
+    // 音源ファイルを読み込めないとき（オフライン・埋め込み先の制限）の代わりの音。曲の中でも聞き取れるよう、やや太く明るい音にする
     this.pianoFallback = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'triangle' },
-      envelope: { attack: 0.005, decay: 0.6, sustain: 0.2, release: 0.8 },
+      oscillator: { type: 'fattriangle', count: 3, spread: 18 },
+      envelope: { attack: 0.004, decay: 0.8, sustain: 0.35, release: 0.8 },
     }).connect(pianoVol);
-    this.pianoFallback.volume.value = -8;
+    this.pianoFallback.volume.value = -3;
     this.pianoSampler = new Tone.Sampler({
       urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, n.replace('#', 's') + '.mp3'])),
       baseUrl: SAMPLE_BASE,
@@ -135,7 +139,7 @@ class AudioEngine {
     if (this.accompVol) this.accompVol.volume.value = toDb(v);
   }
 
-  /** ピアノ（コード・MIDIモニター）の音量。1 が標準 */
+  /** ピアノ（コード・MIDIモニター）の音量。1 が標準、最大 3（約 +10dB。リミッターで割れないようにしている） */
   setPianoVolume(v: number) {
     if (this.pianoVol) this.pianoVol.volume.value = PIANO_DB + toDb(v);
   }
